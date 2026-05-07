@@ -22,6 +22,7 @@ class Tools_Page {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
 		add_action( 'wp_ajax_sqs71_run_batch', array( $this, 'ajax_run_batch' ) );
+		add_action( 'wp_ajax_sqs71_set_featured', array( $this, 'ajax_set_featured' ) );
 	}
 
 	public function register_menu() {
@@ -146,6 +147,21 @@ class Tools_Page {
 
 			<h3><?php esc_html_e( 'Log', 'sqs71-to-gutenberg' ); ?></h3>
 			<pre id="sqs71-log" style="background:#fff;border:1px solid #ddd;padding:1em;max-height:480px;overflow:auto;font-family:Menlo,Consolas,monospace;font-size:12px"></pre>
+
+			<hr />
+			<h2><?php esc_html_e( 'Set featured images from Squarespace', 'sqs71-to-gutenberg' ); ?></h2>
+			<p><?php esc_html_e( 'Squarespace XML imports often lose the cover-image association. This walks the live Squarespace blog JSON, finds each post\'s assetUrl (cover image), and sets it as the WordPress featured image. Imports any missing images on the fly.', 'sqs71-to-gutenberg' ); ?></p>
+			<p>
+				<label><?php esc_html_e( 'Batch size:', 'sqs71-to-gutenberg' ); ?>
+					<input type="number" id="sqs71-feat-limit" min="1" max="500" value="100" style="width:80px" />
+				</label>
+				&nbsp;
+				<label><input type="checkbox" id="sqs71-feat-retry" /> <?php esc_html_e( 'Retry mode (re-process posts that failed earlier)', 'sqs71-to-gutenberg' ); ?></label>
+				&nbsp;
+				<button type="button" class="button button-primary" id="sqs71-feat-run"><?php esc_html_e( 'Set featured images', 'sqs71-to-gutenberg' ); ?></button>
+				<span id="sqs71-feat-progress" style="margin-left:1em;color:#666"></span>
+			</p>
+			<pre id="sqs71-feat-log" style="background:#fff;border:1px solid #ddd;padding:1em;max-height:300px;overflow:auto;font-family:Menlo,Consolas,monospace;font-size:12px"></pre>
 		</div>
 
 		<script>
@@ -175,8 +191,53 @@ class Tools_Page {
 				}
 			});
 		})();
+
+		(function(){
+			const btn=document.getElementById('sqs71-feat-run');
+			const log=document.getElementById('sqs71-feat-log');
+			const prog=document.getElementById('sqs71-feat-progress');
+			const limit=document.getElementById('sqs71-feat-limit');
+			const retry=document.getElementById('sqs71-feat-retry');
+			btn.addEventListener('click',async function(){
+				btn.disabled=true; prog.textContent='Running…'; log.textContent='';
+				try{
+					const fd=new FormData();
+					fd.append('action','sqs71_set_featured');
+					fd.append('_ajax_nonce',<?php echo wp_json_encode( wp_create_nonce( self::NONCE ) ); ?>);
+					fd.append('limit',limit.value);
+					if(retry.checked)fd.append('retry','1');
+					const r=await fetch(ajaxurl,{method:'POST',credentials:'include',body:fd});
+					const j=await r.json();
+					log.textContent=JSON.stringify(j,null,2);
+					prog.textContent=j.success?'Done.':'Error.';
+				}catch(e){log.textContent='Error: '+e.message;prog.textContent='Failed.';}
+				finally{btn.disabled=false;}
+			});
+		})();
 		</script>
 		<?php
+	}
+
+	public function ajax_set_featured() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'error' => 'forbidden' ), 403 );
+		}
+		check_ajax_referer( self::NONCE );
+
+		$settings = sqs71_to_gutenberg_get_settings();
+		if ( empty( $settings['source_domain'] ) ) {
+			wp_send_json_error( array( 'error' => 'source_domain not configured' ), 400 );
+		}
+
+		if ( function_exists( 'set_time_limit' ) ) set_time_limit( 0 );
+
+		$setter = new \Sqs71ToGutenberg\Featured_Image_Setter( $settings );
+		$result = $setter->run_batch( array(
+			'limit' => isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 100,
+			'retry' => ! empty( $_POST['retry'] ),
+		) );
+
+		wp_send_json_success( $result );
 	}
 
 	public function ajax_run_batch() {

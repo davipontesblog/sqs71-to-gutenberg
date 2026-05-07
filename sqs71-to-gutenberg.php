@@ -32,6 +32,8 @@ require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-block-parser.php';
 require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-media-importer.php';
 require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-block-emitter.php';
 require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-post-rewriter.php';
+require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-archive-index.php';
+require_once SQS71_TO_GUTENBERG_PATH . 'includes/class-featured-image-setter.php';
 require_once SQS71_TO_GUTENBERG_PATH . 'admin/class-tools-page.php';
 
 add_action(

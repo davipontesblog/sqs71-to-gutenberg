@@ -67,6 +67,29 @@ wp sqs71 convert --all --force
 The plugin marks each converted post with `_sqs71_converted_at` post meta so
 re-runs skip them by default.
 
+## Set featured images
+
+Squarespace XML imports often drop the cover-image association on each post.
+The plugin can rebuild it by walking the live Squarespace blog JSON and
+matching each post's `assetUrl` (cover image) to a Media Library attachment.
+Sideloads any missing images on the fly.
+
+In wp-admin: scroll down on **Tools → Squarespace → Gutenberg** to the
+"Set featured images from Squarespace" section. From WP-CLI:
+
+```bash
+wp sqs71 set-featured --limit=100
+wp sqs71 set-featured --all                # loops until done
+wp sqs71 set-featured --retry --limit=200  # retry posts that didn't get a thumbnail
+```
+
+The plugin tags each processed post with `_sqs71_featured_set` meta so
+re-runs are idempotent. Use `--retry` to force a re-attempt on posts that
+were processed but didn't successfully get a thumbnail (most often: posts
+with WP slugs that don't match the live Squarespace slug, e.g. `-2`/`-3`
+duplicate-import artifacts; the retry path falls back to
+`_sqs71_resolved_url` post meta if present).
+
 ## What it converts
 
 | Squarespace block class      | Gutenberg block emitted                      |
