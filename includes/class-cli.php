@@ -172,4 +172,79 @@ class CLI {
 			$totals['set'], $totals['imported'], $totals['missing'], $totals['errors'], $totals['processed']
 		) );
 	}
+
+	/**
+	 * Reassign post_author to match the original Squarespace authorId.
+	 *
+	 * Useful when a WP XML import collapsed all posts under a single user.
+	 * Walks the live Squarespace blog JSON, finds each post's author, and
+	 * sets post_author. Optionally creates WP users (role: Author) for any
+	 * Squarespace authors who don't already have a matching WP user.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--survey]
+	 * : Just list unique Squarespace authors and their matching WP users; don't change anything.
+	 *
+	 * [--limit=<n>]
+	 * : Posts per batch. Default 200.
+	 *
+	 * [--create-users]
+	 * : Auto-create matching WP users for Squarespace authors that don't have one.
+	 *
+	 * [--all]
+	 * : Loop until done.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *   wp sqs71 reassign-authors --survey
+	 *   wp sqs71 reassign-authors --create-users --all
+	 *
+	 * @when after_wp_load
+	 */
+	public function reassign_authors( $args, $assoc_args ) {
+		$settings = sqs71_to_gutenberg_get_settings();
+		if ( empty( $settings['source_domain'] ) ) {
+			\WP_CLI::error( 'source_domain not configured. Visit Tools → Squarespace → Gutenberg first.' );
+		}
+		$reassigner = new Author_Reassigner( $settings );
+
+		if ( ! empty( $assoc_args['survey'] ) ) {
+			$rows = $reassigner->survey( static function ( $m ) { \WP_CLI::log( $m ); } );
+			$table = array_map( static function ( $r ) {
+				return array(
+					'posts'      => $r['posts'],
+					'name'       => $r['name'],
+					'sqs_id'     => $r['author_id'],
+					'wp_user'    => $r['wp_user_login'] ?: '(no match)',
+					'wp_user_id' => $r['wp_user_id'] ?: '-',
+				);
+			}, $rows );
+			\WP_CLI\Utils\format_items( 'table', $table, array( 'posts', 'name', 'sqs_id', 'wp_user', 'wp_user_id' ) );
+			return;
+		}
+
+		$limit  = isset( $assoc_args['limit'] ) ? max( 1, (int) $assoc_args['limit'] ) : 200;
+		$create = ! empty( $assoc_args['create-users'] );
+		$all    = ! empty( $assoc_args['all'] );
+
+		$totals = array( 'set' => 0, 'unchanged' => 0, 'missing' => 0, 'created_users' => 0, 'processed' => 0 );
+
+		do {
+			$res = $reassigner->run_batch( array(
+				'limit'        => $limit,
+				'create_users' => $create,
+				'logger'       => static function ( $m ) { \WP_CLI::log( $m ); },
+			) );
+			foreach ( $totals as $k => $_ ) { $totals[ $k ] += $res[ $k ] ?? 0; }
+			\WP_CLI::log( sprintf( '  batch: set=%d unchanged=%d missing=%d created_users=%d processed=%d',
+				$res['set'], $res['unchanged'], $res['missing'], $res['created_users'], $res['processed'] ) );
+			if ( $res['processed'] === 0 ) break;
+		} while ( $all );
+
+		\WP_CLI::success( sprintf(
+			'Done. Total: set=%d unchanged=%d missing=%d created_users=%d processed=%d',
+			$totals['set'], $totals['unchanged'], $totals['missing'], $totals['created_users'], $totals['processed']
+		) );
+	}
 }

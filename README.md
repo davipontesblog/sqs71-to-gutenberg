@@ -90,6 +90,35 @@ with WP slugs that don't match the live Squarespace slug, e.g. `-2`/`-3`
 duplicate-import artifacts; the retry path falls back to
 `_sqs71_resolved_url` post meta if present).
 
+## Reassign post authors
+
+Squarespace XML imports often collapse all posts under a single user. The
+plugin can rebuild authorship by walking the live Squarespace blog JSON,
+finding each post's original `authorId`, and matching it to a WP user
+(creating new users for any Squarespace authors who don't have a matching
+WP account if you opt in).
+
+In wp-admin: scroll to "Reassign post authors from Squarespace" on the
+**Tools → Squarespace → Gutenberg** page. Click **Survey authors** first
+to see the unique authors in the source; then **Reassign authors** to apply.
+From WP-CLI:
+
+```bash
+wp sqs71 reassign-authors --survey                 # list authors first
+wp sqs71 reassign-authors --create-users --all     # create missing users + reassign
+wp sqs71 reassign-authors --all                    # reassign without creating users
+                                                   # (posts whose author has no WP
+                                                   # match get flagged 'no-wp-user')
+```
+
+Created users are given role **Author** with a 32-char random password
+(reset via the standard WP password-reset flow). Each WP user gets a
+`sqs71_author_id` user-meta entry so future runs find them by their
+Squarespace ID even if the display name changes.
+
+Each processed post is tagged with `_sqs71_author_set` meta so re-runs are
+idempotent.
+
 ## What it converts
 
 | Squarespace block class      | Gutenberg block emitted                      |

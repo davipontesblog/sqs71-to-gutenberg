@@ -23,6 +23,8 @@ class Tools_Page {
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
 		add_action( 'wp_ajax_sqs71_run_batch', array( $this, 'ajax_run_batch' ) );
 		add_action( 'wp_ajax_sqs71_set_featured', array( $this, 'ajax_set_featured' ) );
+		add_action( 'wp_ajax_sqs71_authors_survey', array( $this, 'ajax_authors_survey' ) );
+		add_action( 'wp_ajax_sqs71_authors_run', array( $this, 'ajax_authors_run' ) );
 	}
 
 	public function register_menu() {
@@ -162,6 +164,23 @@ class Tools_Page {
 				<span id="sqs71-feat-progress" style="margin-left:1em;color:#666"></span>
 			</p>
 			<pre id="sqs71-feat-log" style="background:#fff;border:1px solid #ddd;padding:1em;max-height:300px;overflow:auto;font-family:Menlo,Consolas,monospace;font-size:12px"></pre>
+
+			<hr />
+			<h2><?php esc_html_e( 'Reassign post authors from Squarespace', 'sqs71-to-gutenberg' ); ?></h2>
+			<p><?php esc_html_e( 'Squarespace XML imports often collapse all posts under a single user. This walks the live blog JSON, finds each post\'s original Squarespace author, and reassigns post_author. Tick "Create users" to auto-create matching WP user accounts (role: Author) for any Squarespace authors who don\'t already have a WP user.', 'sqs71-to-gutenberg' ); ?></p>
+			<p>
+				<button type="button" class="button" id="sqs71-auth-survey"><?php esc_html_e( 'Survey authors', 'sqs71-to-gutenberg' ); ?></button>
+				&nbsp;
+				<label><?php esc_html_e( 'Batch size:', 'sqs71-to-gutenberg' ); ?>
+					<input type="number" id="sqs71-auth-limit" min="1" max="500" value="200" style="width:80px" />
+				</label>
+				&nbsp;
+				<label><input type="checkbox" id="sqs71-auth-create" checked /> <?php esc_html_e( 'Create users for missing authors', 'sqs71-to-gutenberg' ); ?></label>
+				&nbsp;
+				<button type="button" class="button button-primary" id="sqs71-auth-run"><?php esc_html_e( 'Reassign authors', 'sqs71-to-gutenberg' ); ?></button>
+				<span id="sqs71-auth-progress" style="margin-left:1em;color:#666"></span>
+			</p>
+			<pre id="sqs71-auth-log" style="background:#fff;border:1px solid #ddd;padding:1em;max-height:300px;overflow:auto;font-family:Menlo,Consolas,monospace;font-size:12px"></pre>
 		</div>
 
 		<script>
@@ -214,6 +233,46 @@ class Tools_Page {
 				finally{btn.disabled=false;}
 			});
 		})();
+
+		(function(){
+			const surveyBtn=document.getElementById('sqs71-auth-survey');
+			const runBtn=document.getElementById('sqs71-auth-run');
+			const log=document.getElementById('sqs71-auth-log');
+			const prog=document.getElementById('sqs71-auth-progress');
+			const limit=document.getElementById('sqs71-auth-limit');
+			const create=document.getElementById('sqs71-auth-create');
+			const NONCE=<?php echo wp_json_encode( wp_create_nonce( self::NONCE ) ); ?>;
+
+			surveyBtn.addEventListener('click',async function(){
+				surveyBtn.disabled=true; prog.textContent='Surveying…'; log.textContent='';
+				try{
+					const fd=new FormData();
+					fd.append('action','sqs71_authors_survey');
+					fd.append('_ajax_nonce',NONCE);
+					const r=await fetch(ajaxurl,{method:'POST',credentials:'include',body:fd});
+					const j=await r.json();
+					log.textContent=JSON.stringify(j,null,2);
+					prog.textContent='Survey done.';
+				}catch(e){log.textContent='Error: '+e.message;}
+				finally{surveyBtn.disabled=false;}
+			});
+
+			runBtn.addEventListener('click',async function(){
+				runBtn.disabled=true; prog.textContent='Running…'; log.textContent='';
+				try{
+					const fd=new FormData();
+					fd.append('action','sqs71_authors_run');
+					fd.append('_ajax_nonce',NONCE);
+					fd.append('limit',limit.value);
+					if(create.checked)fd.append('create_users','1');
+					const r=await fetch(ajaxurl,{method:'POST',credentials:'include',body:fd});
+					const j=await r.json();
+					log.textContent=JSON.stringify(j,null,2);
+					prog.textContent=j.success?'Done.':'Error.';
+				}catch(e){log.textContent='Error: '+e.message;prog.textContent='Failed.';}
+				finally{runBtn.disabled=false;}
+			});
+		})();
 		</script>
 		<?php
 	}
@@ -238,6 +297,30 @@ class Tools_Page {
 		) );
 
 		wp_send_json_success( $result );
+	}
+
+	public function ajax_authors_survey() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( array( 'error' => 'forbidden' ), 403 );
+		check_ajax_referer( self::NONCE );
+
+		if ( function_exists( 'set_time_limit' ) ) set_time_limit( 0 );
+
+		$reassigner = new \Sqs71ToGutenberg\Author_Reassigner( sqs71_to_gutenberg_get_settings() );
+		wp_send_json_success( $reassigner->survey() );
+	}
+
+	public function ajax_authors_run() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( array( 'error' => 'forbidden' ), 403 );
+		check_ajax_referer( self::NONCE );
+
+		if ( function_exists( 'set_time_limit' ) ) set_time_limit( 0 );
+
+		$reassigner = new \Sqs71ToGutenberg\Author_Reassigner( sqs71_to_gutenberg_get_settings() );
+		$res = $reassigner->run_batch( array(
+			'limit'        => isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 200,
+			'create_users' => ! empty( $_POST['create_users'] ),
+		) );
+		wp_send_json_success( $res );
 	}
 
 	public function ajax_run_batch() {

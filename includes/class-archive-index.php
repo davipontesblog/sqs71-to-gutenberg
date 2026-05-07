@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Archive_Index {
 
-	const TRANSIENT = 'sqs71_archive_index_v2';
+	const TRANSIENT = 'sqs71_archive_index_v3';
 
 	/** @var array<string,mixed> */
 	private $settings;
@@ -85,11 +85,17 @@ class Archive_Index {
 				$urlId = $it['urlId'] ?? null;
 				if ( ! $urlId ) continue;
 				$slug = basename( $urlId );
+				$author = $it['author'] ?? array();
 				$index[ $slug ] = array(
-					'title' => $it['title']    ?? '',
-					'url'   => $source . ( $it['fullUrl'] ?? '' ),
-					'asset' => $it['assetUrl'] ?? '',
-					'fname' => $it['filename'] ?? '',
+					'title'         => $it['title']    ?? '',
+					'url'           => $source . ( $it['fullUrl'] ?? '' ),
+					'asset'         => $it['assetUrl'] ?? '',
+					'fname'         => $it['filename'] ?? '',
+					'author_id'     => $it['authorId'] ?? '',
+					'author_first'  => $author['firstName']    ?? '',
+					'author_last'   => $author['lastName']     ?? '',
+					'author_name'   => $author['displayName']  ?? '',
+					'author_avatar' => $author['avatarUrl']    ?? '',
 				);
 			}
 
